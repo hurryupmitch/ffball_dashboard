@@ -416,7 +416,7 @@ def main():
         st.warning("Logo image not found. Please ensure 'assets/logo.png' exists.")
 
     st.title("🏈 Fantasy Football Dashboard")
-    st.subheader("Welcome to the ultimate arena to witness how disastrously your team stacks up against all the other mediocre squads in the league.")
+    st.subheader("Welcome to the nerd zone where you can see just how poorly your team stacks up against all the other mediocre squads in the league.")
 
     # ---------------------------
     # Navigation
