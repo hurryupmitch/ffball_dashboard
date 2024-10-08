@@ -283,8 +283,8 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
     }).reset_index()
 
     total_df = pd.merge(total_df, all_play_agg, on="Team", how='left')
-    total_df["Difference (Actual vs All-Play Win Percentage)"] = total_df["Win Percentage"] - total_df["All-Play Win Percentage"]
-    total_df["Tiebreak Score"] = total_df["Win Percentage"] + (total_df["Points For"] / 10000)
+    total_df["Luck Differential"] = total_df["Win Percentage"] - total_df["All-Play Win Percentage"]
+    total_df["Standings Score"] = total_df["Win Percentage"] + (total_df["Points For"] / 10000)
 
     total_df["Remaining Games"] = TOTAL_WEEKS - current_week
     total_df["Max Wins"] = total_df["Wins"] + total_df["Remaining Games"]
@@ -307,14 +307,14 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
 
     # Calculate Luck Rating based on Difference
     conditions = [
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] >= 0.35),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] >= 0.25),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] >= 0.15),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] == 0),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] >= -0.1),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] >= -0.2),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] >= -0.3),
-        (total_df["Difference (Actual vs All-Play Win Percentage)"] < -0.3)
+        (total_df["Luck Differential"] >= 0.35),
+        (total_df["Luck Differential"] >= 0.25),
+        (total_df["Luck Differential"] >= 0.15),
+        (total_df["Luck Differential"] == 0),
+        (total_df["Luck Differential"] >= -0.1),
+        (total_df["Luck Differential"] >= -0.2),
+        (total_df["Luck Differential"] >= -0.3),
+        (total_df["Luck Differential"] < -0.3)
     ]
     choices = [
         "Luckiest",
@@ -333,6 +333,8 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "Wins",
         "Losses",
         "Ties",
+        "Standings Score",
+        "Power Score",
         "Points For",
         "Points Against",
         "Net Points",
@@ -341,14 +343,12 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "All-Play Wins",
         "All-Play Losses",
         "All-Play Win Percentage",
-        "Difference (Actual vs All-Play Win Percentage)",
-        "Magic Number",
-        "Power Score",
-        "Tiebreak Score",
+        "Luck Differential",
         "Luck Rating",
         "Remaining Games",
         "Max Wins",
-        "Win Percentage vs Median"
+        "Win Percentage vs Median",
+        "Magic Number"
     ]
 
     existing_columns = [col for col in columns_order if col in total_df.columns]
@@ -483,8 +483,8 @@ def main():
         "Wins", "Losses", "Ties", "Points For", "Points Against",
         "Net Points", "Win Percentage", "Points Per Game",
         "All-Play Wins", "All-Play Losses", "All-Play Win Percentage",
-        "Difference (Actual vs All-Play Win Percentage)", "Magic Number",
-        "Power Score", "Tiebreak Score", "Remaining Games", "Max Wins",
+        "Luck Differential", "Magic Number",
+        "Power Score", "Standings Score", "Remaining Games", "Max Wins",
         "Win Percentage vs Median", "Luck Rating"
     ]
 
