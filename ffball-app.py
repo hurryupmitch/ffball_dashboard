@@ -10,12 +10,55 @@ from PIL import Image
 # Streamlit App Configuration
 # ---------------------------
 
-st.set_page_config(
-    page_title="🏈 Fantasy Football Dashboard",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    page_icon="assets/favicon.ico"  # Path to your favicon
-)
+# Attempt to set the page icon, handle missing favicon gracefully
+try:
+    st.set_page_config(
+        page_title="🏈 Fantasy Football Dashboard",
+        layout="wide",  # 'wide' layout is generally better for responsiveness
+        initial_sidebar_state="collapsed",  # Sidebar collapsed by default since we're removing filters
+        page_icon="assets/favicon.ico"  # Path to your favicon
+    )
+except FileNotFoundError:
+    st.set_page_config(
+        page_title="🏈 Fantasy Football Dashboard",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+        page_icon=":football:"  # Use a default emoji icon
+    )
+
+# ---------------------------
+# Custom CSS for Mobile Responsiveness
+# ---------------------------
+
+def local_css():
+    st.markdown("""
+    <style>
+    /* Make images responsive */
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    /* Adjust header font size on mobile */
+    @media (max-width: 768px) {
+        h1 {
+            font-size: 1.8rem;
+        }
+        h2 {
+            font-size: 1.4rem;
+        }
+    }
+
+    /* Hide certain elements on very small screens if necessary */
+    @media (max-width: 480px) {
+        .hide-on-mobile {
+            display: none;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+local_css()
 
 # ---------------------------
 # Configuration and Constants
@@ -26,9 +69,13 @@ SEASON_YEAR = "2024"
 TOTAL_WEEKS = 14  # Total number of weeks in the season
 PLAYOFF_SPOTS = 6  # Number of playoff spots
 
-# Accessing credentials securely from Streamlit secrets
-SWID = st.secrets["SWID"]
-ESPNS2 = st.secrets["ESPNS2"]
+# Accessing credentials securely from Streamlit secrets with error handling
+try:
+    SWID = st.secrets["SWID"]
+    ESPNS2 = st.secrets["ESPNS2"]
+except KeyError as e:
+    st.error(f"Missing secret key: {e}. Please set it in your Streamlit secrets.")
+    st.stop()
 
 # Cookies for authentication
 cookies = {"SWID": SWID, "espn_s2": ESPNS2}
@@ -47,13 +94,23 @@ def fetch_data():
         f"seasons/{SEASON_YEAR}/segments/0/leagues/{LEAGUE_ID}?view=mMatchup&view=mScoreboard"
     )
 
-    response = requests.get(url, cookies=cookies)
+    try:
+        response = requests.get(url, cookies=cookies)
+    except requests.exceptions.RequestException as e:
+        st.error(f"An error occurred while fetching data: {e}")
+        st.stop()
 
     if response.status_code != 200:
         st.error(f"Failed to fetch data: {response.status_code}")
         st.stop()
 
     data = response.json()
+
+    # Validate expected keys
+    if "teams" not in data or "schedule" not in data:
+        st.error("API response is missing required data. Please check your league ID and API access.")
+        st.stop()
+
     return data
 
 def calculate_team_records(df):
@@ -290,7 +347,8 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "Tiebreak Score",
         "Luck Rating",
         "Remaining Games",
-        "Max Wins"
+        "Max Wins",
+        "Win Percentage vs Median"
     ]
 
     existing_columns = [col for col in columns_order if col in total_df.columns]
@@ -351,24 +409,23 @@ def main():
     # ---------------------------
     # Header with Logo
     # ---------------------------
-    logo = Image.open("assets/logo.png")
-    st.image(logo, width=300)  # Adjust the width as needed
+    try:
+        logo = Image.open("assets/logo.png")
+        st.image(logo, width=300)  # Adjust the width as needed
+    except FileNotFoundError:
+        st.warning("Logo image not found. Please ensure 'assets/logo.png' exists.")
 
     st.title("🏈 Fantasy Football Dashboard")
-    st.markdown("""
-    Welcome to your personalized Fantasy Football Dashboard! Monitor your league's performance, track team statistics, and visualize data with interactive charts and tables.
-    """)
+    st.subheader("Welcome to the ultimate arena to witness how disastrously your team stacks up against all the other mediocre squads in the league.")
 
     # ---------------------------
-    # Sidebar with Logo
-    # ---------------------------
-    st.sidebar.image("assets/logo.png", width=200)  # Adjust the width as needed
-
     # Navigation
-    selection = st.sidebar.radio("Go to", ["Overview", "Team Analysis", "Weekly Matchups", "Metrics Over Time", "Advanced Visualizations", "About"])
+    # ---------------------------
+    selection = st.sidebar.radio("Navigate to", ["Overview", "Team Analysis", "Weekly Matchups", "Metrics Over Time", "Advanced Visualizations"])
 
-    # Filters
-    st.sidebar.subheader("Filters")
+    # ---------------------------
+    # Fetch and Prepare Data
+    # ---------------------------
     data = fetch_data()
 
     # Extract teams
@@ -387,7 +444,7 @@ def main():
         home_team_name = teams.get(home_team_id, f"Team {home_team_id}")
         home_score = matchup["home"]["totalPoints"]
 
-        if "away" in matchup:
+        if "away" in matchup and matchup["away"] is not None:
             away_team_id = matchup["away"]["teamId"]
             away_team_name = teams.get(away_team_id, f"Team {away_team_id}")
             away_score = matchup["away"]["totalPoints"]
@@ -427,37 +484,9 @@ def main():
         "Net Points", "Win Percentage", "Points Per Game",
         "All-Play Wins", "All-Play Losses", "All-Play Win Percentage",
         "Difference (Actual vs All-Play Win Percentage)", "Magic Number",
-        "Power Score", "Tiebreak Score", "Remaining Games", "Max Wins"
+        "Power Score", "Tiebreak Score", "Remaining Games", "Max Wins",
+        "Win Percentage vs Median", "Luck Rating"
     ]
-
-    # Dynamic Filters
-    selected_teams = st.sidebar.multiselect(
-        "Select Teams",
-        options=sorted(total_table_df['Team'].unique()),
-        default=sorted(total_table_df['Team'].unique())
-    )
-    selected_weeks = st.sidebar.slider(
-        "Select Weeks",
-        min_value=1,
-        max_value=TOTAL_WEEKS,
-        value=(1, TOTAL_WEEKS),
-        step=1
-    )
-    selected_metrics = st.sidebar.multiselect(
-        "Select Metrics",
-        options=all_metrics,
-        default=["Wins", "Losses", "Points For", "Points Against"]
-    )
-
-    # Apply Filters
-    filtered_total_df = total_table_df[
-        total_table_df['Team'].isin(selected_teams)
-    ]
-    filtered_weekly_total_tables = {
-        week: df[df['Team'].isin(selected_teams)]
-        for week, df in weekly_total_tables.items()
-        if selected_weeks[0] <= week <= selected_weeks[1]
-    }
 
     # ---------------------------
     # Overview Page
@@ -467,11 +496,11 @@ def main():
 
         # Display Total Table
         st.subheader("Total Table")
-        st.dataframe(filtered_total_df)
+        st.dataframe(total_table_df)
 
         # Download Total Table
         create_download_link(
-            filtered_total_df,
+            total_table_df,
             "Total_Table.xlsx",
             sheet_name="Total Table"
         )
@@ -479,7 +508,7 @@ def main():
         # Display Points For by Team
         st.subheader("Points For by Team")
         fig_pf = px.bar(
-            filtered_total_df,
+            total_table_df,
             x='Team',
             y='Points For',
             title='Points For by Team',
@@ -493,7 +522,7 @@ def main():
         # Display Points Against by Team
         st.subheader("Points Against by Team")
         fig_pa = px.bar(
-            filtered_total_df,
+            total_table_df,
             x='Team',
             y='Points Against',
             title='Points Against by Team',
@@ -507,7 +536,7 @@ def main():
         # Display Net Points
         st.subheader("Net Points by Team")
         fig_np = px.bar(
-            filtered_total_df,
+            total_table_df,
             x='Team',
             y='Net Points',
             title='Net Points by Team',
@@ -529,9 +558,9 @@ def main():
         selected_team = st.selectbox("Select Team", options=teams_available)
 
         # Apply Team Filter
-        team_record = filtered_total_df[filtered_total_df['Team'] == selected_team]
+        team_record = total_table_df[total_table_df['Team'] == selected_team]
         if team_record.empty:
-            st.warning("No data available for the selected team and filters.")
+            st.warning("No data available for the selected team.")
         else:
             # Display Team Record
             st.subheader(f"Record for {selected_team}")
@@ -551,10 +580,10 @@ def main():
             )
 
             # Prepare Data for Plotting
-            weeks = sorted(filtered_weekly_total_tables.keys())
+            weeks = sorted(weekly_total_tables.keys())
             metric_values = []
             for week in weeks:
-                weekly_df = filtered_weekly_total_tables[week]
+                weekly_df = weekly_total_tables[week]
                 if metric in weekly_df.columns:
                     value = weekly_df[weekly_df['Team'] == selected_team][metric].values
                     value = value[0] if len(value) > 0 else 0
@@ -591,10 +620,11 @@ def main():
 
         # Select Week
         weeks_available = sorted(weekly_total_tables.keys())
+        default_week_index = min(len(weeks_available)-1, current_week-1) if current_week <= TOTAL_WEEKS else 0
         selected_week = st.selectbox(
             "Select Week",
             options=weeks_available,
-            index=min(len(weeks_available)-1, current_week-1) if current_week <= TOTAL_WEEKS else 0
+            index=default_week_index
         )
 
         # Apply Week Filter
@@ -603,7 +633,7 @@ def main():
         else:
             # Display Total Table for Selected Week
             st.subheader(f"Total Table for Week {selected_week}")
-            weekly_table = filtered_weekly_total_tables.get(selected_week)
+            weekly_table = weekly_total_tables.get(selected_week)
             if weekly_table is not None and not weekly_table.empty:
                 st.dataframe(weekly_table)
 
@@ -614,19 +644,19 @@ def main():
                     sheet_name=f"Week {selected_week} Total Table"
                 )
             else:
-                st.warning("No data available for the selected week and filters.")
+                st.warning("No data available for the selected week.")
 
             # Additional: Display Matchups Details
             st.subheader(f"Matchups Details for Week {selected_week}")
             matchups_week = master_df[
                 (master_df['Week'] == selected_week) &
-                (master_df['Home Team'].isin(selected_teams)) &
-                (master_df['Away Team'].isin(selected_teams + ["Bye"]))
+                (master_df['Home Team'].isin(total_table_df['Team'])) &
+                (master_df['Away Team'].isin(total_table_df['Team'].tolist() + ["Bye"]))
             ]
             if not matchups_week.empty:
                 st.table(matchups_week)
             else:
-                st.warning("No matchup details available for the selected week and filters.")
+                st.warning("No matchup details available for the selected week.")
 
     # ---------------------------
     # Metrics Over Time Page
@@ -651,9 +681,9 @@ def main():
             )
 
             # Plot for Each Team
-            for team in sorted(filtered_total_df['Team'].unique()):
+            for team in sorted(total_table_df['Team'].unique()):
                 metric_values = []
-                for week in sorted(filtered_weekly_total_tables.keys()):
+                for week in sorted(weekly_total_tables.keys()):
                     weekly_df = weekly_total_tables[week]
                     if metric in weekly_df.columns:
                         value = weekly_df[weekly_df['Team'] == team][metric].values
@@ -662,7 +692,7 @@ def main():
                         value = 0
                     metric_values.append(value)
                 fig_metric_over_time.add_scatter(
-                    x=sorted(filtered_weekly_total_tables.keys()),
+                    x=sorted(weekly_total_tables.keys()),
                     y=metric_values,
                     mode='lines+markers',
                     name=team
@@ -679,11 +709,11 @@ def main():
 
             # Download Metrics Over Time
             # Create a combined DataFrame for all teams
-            metrics_over_time_df = pd.DataFrame({'Week': sorted(filtered_weekly_total_tables.keys())})
-            for team in sorted(filtered_total_df['Team'].unique()):
+            metrics_over_time_df = pd.DataFrame({'Week': sorted(weekly_total_tables.keys())})
+            for team in sorted(total_table_df['Team'].unique()):
                 metrics_over_time_df[team] = [
-                    weekly_total_tables[week].set_index('Team').loc[team, metric] if team in weekly_total_tables[week].set_index('Team').index else 0
-                    for week in sorted(filtered_weekly_total_tables.keys())
+                    weekly_total_tables[week].set_index('Team').loc[team, metric] if (team in weekly_total_tables[week].set_index('Team').index and metric in weekly_total_tables[week].columns) else 0
+                    for week in sorted(weekly_total_tables.keys())
                 ]
             create_download_link(
                 metrics_over_time_df,
@@ -698,7 +728,7 @@ def main():
         st.header("🔧 Advanced Visualizations")
 
         # Select Visualization Type
-        viz_type = st.selectbox("Select Visualization Type", options=["Scatter Plot", "Pie Chart", "Heatmap"])
+        viz_type = st.selectbox("Select Visualization Type", options=["Scatter Plot", "Pie Chart", "Heatmap", "Line Graph"])
 
         if viz_type == "Scatter Plot":
             st.subheader("🔀 Scatter Plot")
@@ -717,7 +747,7 @@ def main():
 
             if x_metric and y_metric:
                 fig_scatter = px.scatter(
-                    filtered_total_df,
+                    total_table_df,
                     x=x_metric,
                     y=y_metric,
                     color="Team",
@@ -728,7 +758,7 @@ def main():
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
                 # Download Scatter Plot Data
-                scatter_data = filtered_total_df[[
+                scatter_data = total_table_df[[
                     'Team', x_metric, y_metric, 'Wins', 'Losses', 'Ties', 'Win Percentage'
                 ]]
                 create_download_link(
@@ -749,7 +779,7 @@ def main():
 
             if pie_metric:
                 fig_pie = px.pie(
-                    filtered_total_df,
+                    total_table_df,
                     names='Team',
                     values=pie_metric,
                     title=f'{pie_metric} Distribution by Team',
@@ -758,7 +788,7 @@ def main():
                 st.plotly_chart(fig_pie, use_container_width=True)
 
                 # Download Pie Chart Data
-                pie_data = filtered_total_df[['Team', pie_metric]]
+                pie_data = total_table_df[['Team', pie_metric]]
                 create_download_link(
                     pie_data,
                     f"Pie_Chart_{pie_metric}_Distribution.xlsx",
@@ -776,12 +806,12 @@ def main():
             )
 
             if heatmap_metrics and len(heatmap_metrics) >= 2:
-                heatmap_data = filtered_total_df[["Team"] + heatmap_metrics].set_index("Team")
+                heatmap_data = total_table_df[["Team"] + heatmap_metrics].set_index("Team")
                 fig_heatmap = px.imshow(
                     heatmap_data,
                     labels=dict(x="Metrics", y="Teams", color="Value"),
                     x=heatmap_metrics,
-                    y=filtered_total_df['Team'],
+                    y=total_table_df['Team'],
                     aspect="auto",
                     title="Heatmap of Selected Metrics"
                 )
@@ -797,37 +827,66 @@ def main():
             else:
                 st.warning("Please select at least two metrics for the heatmap.")
 
-    # ---------------------------
-    # About Page
-    # ---------------------------
-    elif selection == "About":
-        st.header("ℹ️ About This Dashboard")
-        st.markdown("""
-        This Fantasy Football Dashboard provides comprehensive insights into your league's performance. Track team records, points, and various metrics over the season with interactive charts and tables.
+        elif viz_type == "Line Graph":
+            st.subheader("📈 Line Graph")
 
-        **Features:**
-        - **League Overview:** View the overall standings, points for and against, and net points for each team.
-        - **Team Analysis:** Dive into individual team performance, including weekly metrics.
-        - **Weekly Matchups:** Analyze matchups and results on a week-by-week basis.
-        - **Metrics Over Time:** Visualize selected metrics across the season for all teams.
-        - **Advanced Visualizations:** Create scatter plots, pie charts, and heatmaps for deeper analysis.
-        - **Filters & Download Options:** Customize views with filters and download data as Excel files.
+            # Select Metrics for Line Graph
+            line_metrics = st.multiselect(
+                "Select Metrics for Line Graph",
+                options=all_metrics,
+                default=["Win Percentage", "Points For"]
+            )
 
-        **Built With:**
-        - [Streamlit](https://streamlit.io/) for the interactive dashboard.
-        - [Pandas](https://pandas.pydata.org/) for data manipulation.
-        - [Plotly Express](https://plotly.com/python/plotly-express/) for interactive visualizations.
+            if line_metrics:
+                fig_line = px.line(
+                    title="Selected Metrics Over Time",
+                    labels={'x': 'Week', 'y': 'Value'}
+                )
 
-        **Data Source:** ESPN Fantasy Football API
+                for metric in line_metrics:
+                    for team in sorted(total_table_df['Team'].unique()):
+                        metric_values = []
+                        for week in sorted(weekly_total_tables.keys()):
+                            weekly_df = weekly_total_tables[week]
+                            if metric in weekly_df.columns:
+                                value = weekly_df[weekly_df['Team'] == team][metric].values
+                                value = value[0] if len(value) > 0 else 0
+                            else:
+                                value = 0
+                            metric_values.append(value)
+                        fig_line.add_scatter(
+                            x=sorted(weekly_total_tables.keys()),
+                            y=metric_values,
+                            mode='lines+markers',
+                            name=f"{team} - {metric}"
+                        )
 
-        *Feel free to customize and enhance this dashboard to suit your needs!*
-        """)
+                fig_line.update_layout(
+                    xaxis_title='Week',
+                    yaxis_title='Value',
+                    legend_title='Team - Metric',
+                    template='plotly_dark'
+                )
 
-    # ---------------------------
-    # Footer
-    # ---------------------------
-    st.markdown("---")
-    st.markdown("© 2024 poorsportsmen fantasy fun league. All rights reserved.")
+                st.plotly_chart(fig_line, use_container_width=True)
+
+                # Download Line Graph Data
+                # Create a combined DataFrame for all teams and selected metrics
+                line_graph_df = pd.DataFrame({'Week': sorted(weekly_total_tables.keys())})
+                for metric in line_metrics:
+                    for team in sorted(total_table_df['Team'].unique()):
+                        column_name = f"{team} - {metric}"
+                        line_graph_df[column_name] = [
+                            weekly_total_tables[week].set_index('Team').loc[team, metric] if (team in weekly_total_tables[week].set_index('Team').index and metric in weekly_total_tables[week].columns) else 0
+                            for week in sorted(weekly_total_tables.keys())
+                        ]
+                create_download_link(
+                    line_graph_df,
+                    f"Line_Graph_Selected_Metrics.xlsx",
+                    sheet_name="Line Graph Data"
+                )
+            else:
+                st.warning("Please select at least one metric for the line graph.")
 
 # ---------------------------
 # Run the App
