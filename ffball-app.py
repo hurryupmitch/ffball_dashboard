@@ -223,7 +223,7 @@ def calculate_all_play_records(df):
                 "Team": team,
                 "All-Play Wins": all_play_wins[team],
                 "All-Play Losses": all_play_losses[team],
-                "All-Play Win Percentage": win_pct
+                "All-Play Win Pct": win_pct
             })
 
     all_play_df = pd.DataFrame(all_play_records)
@@ -263,7 +263,7 @@ def calculate_win_pct_vs_median(df_cleaned):
     }
 
     win_vs_median_df = pd.DataFrame([
-        {"Team": team, "Win Percentage vs Median": win_pct_vs_median[team]}
+        {"Team": team, "Win Pct vs Median": win_pct_vs_median[team]}
         for team in teams
     ])
 
@@ -273,18 +273,18 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
     total_df = pd.merge(records_df, points_df, on="Team")
     total_df["Net Points"] = total_df["Points For"] - total_df["Points Against"]
     total_df["Total Games"] = total_df["Wins"] + total_df["Losses"] + total_df["Ties"]
-    total_df["Win Percentage"] = (total_df["Wins"] + 0.5 * total_df["Ties"]) / total_df["Total Games"]
+    total_df["Win Pct"] = (total_df["Wins"] + 0.5 * total_df["Ties"]) / total_df["Total Games"]
     total_df["Points Per Game"] = total_df["Points For"] / total_df["Total Games"]
 
     all_play_agg = all_play_df.groupby('Team').agg({
         "All-Play Wins": "sum",
         "All-Play Losses": "sum",
-        "All-Play Win Percentage": "mean"
+        "All-Play Win Pct": "mean"
     }).reset_index()
 
     total_df = pd.merge(total_df, all_play_agg, on="Team", how='left')
-    total_df["Luck Differential"] = total_df["Win Percentage"] - total_df["All-Play Win Percentage"]
-    total_df["Standings Score"] = total_df["Win Percentage"] + (total_df["Points For"] / 10000)
+    total_df["Luck Differential"] = total_df["Win Pct"] - total_df["All-Play Win Pct"]
+    total_df["Standings Score"] = total_df["Win Pct"] + (total_df["Points For"] / 10000)
 
     total_df["Remaining Games"] = TOTAL_WEEKS - current_week
     total_df["Max Wins"] = total_df["Wins"] + total_df["Remaining Games"]
@@ -302,8 +302,8 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
     total_df = pd.merge(total_df, win_vs_median_df, on="Team", how="left")
 
     total_df["Power Score"] = (total_df["Points For"] * 2) + \
-                               (total_df["Points For"] * total_df["Win Percentage"]) + \
-                               (total_df["Points For"] * total_df["Win Percentage vs Median"])
+                               (total_df["Points For"] * total_df["Win Pct"]) + \
+                               (total_df["Points For"] * total_df["Win Pct vs Median"])
 
     # Calculate Luck Rating based on Difference
     conditions = [
@@ -338,16 +338,16 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "Points For",
         "Points Against",
         "Net Points",
-        "Win Percentage",
+        "Win Pct",
         "Points Per Game",
         "All-Play Wins",
         "All-Play Losses",
-        "All-Play Win Percentage",
+        "All-Play Win Pct",
         "Luck Differential",
         "Luck Rating",
         "Remaining Games",
         "Max Wins",
-        "Win Percentage vs Median",
+        "Win Pct vs Median",
         "Magic Number"
     ]
 
@@ -377,9 +377,9 @@ def generate_weekly_total_tables(df_cleaned, all_play_df):
 
 def sanitize_sheet_name(name):
     """
-    Sanitizes the sheet name to ensure it is <=30 characters and replaces 'Percentage' with 'Pct'.
+    Sanitizes the sheet name to ensure it is <=30 characters and replaces 'Pct' with 'Pct'.
     """
-    name = name.replace("Percentage", "Pct")
+    name = name.replace("Pct", "Pct")
     name = name.replace("/", "_").replace("\\", "_")  # Replace invalid characters
     if len(name) > 30:
         name = name[:30]
@@ -481,11 +481,11 @@ def main():
     # Define All Tracked Metrics
     all_metrics = [
         "Wins", "Losses", "Ties", "Points For", "Points Against",
-        "Net Points", "Win Percentage", "Points Per Game",
-        "All-Play Wins", "All-Play Losses", "All-Play Win Percentage",
+        "Net Points", "Win Pct", "Points Per Game",
+        "All-Play Wins", "All-Play Losses", "All-Play Win Pct",
         "Luck Differential", "Magic Number",
         "Power Score", "Standings Score", "Remaining Games", "Max Wins",
-        "Win Percentage vs Median", "Luck Rating"
+        "Win Pct vs Median", "Luck Rating"
     ]
 
     # ---------------------------
@@ -565,7 +565,7 @@ def main():
             # Display Team Record
             st.subheader(f"Record for {selected_team}")
             st.table(team_record[[
-                'Wins', 'Losses', 'Ties', 'Win Percentage',
+                'Wins', 'Losses', 'Ties', 'Win Pct',
                 'Points For', 'Points Against', 'Net Points'
             ]])
 
@@ -751,7 +751,7 @@ def main():
                     x=x_metric,
                     y=y_metric,
                     color="Team",
-                    size="Win Percentage",
+                    size="Win Pct",
                     hover_data=["Wins", "Losses", "Ties"],
                     title=f'{y_metric} vs {x_metric}',
                 )
@@ -759,7 +759,7 @@ def main():
 
                 # Download Scatter Plot Data
                 scatter_data = total_table_df[[
-                    'Team', x_metric, y_metric, 'Wins', 'Losses', 'Ties', 'Win Percentage'
+                    'Team', x_metric, y_metric, 'Wins', 'Losses', 'Ties', 'Win Pct'
                 ]]
                 create_download_link(
                     scatter_data,
@@ -802,7 +802,7 @@ def main():
             heatmap_metrics = st.multiselect(
                 "Select Metrics for Heatmap",
                 options=all_metrics,
-                default=["Win Percentage", "Points For", "Points Against"]
+                default=["Win Pct", "Points For", "Points Against"]
             )
 
             if heatmap_metrics and len(heatmap_metrics) >= 2:
@@ -834,7 +834,7 @@ def main():
             line_metrics = st.multiselect(
                 "Select Metrics for Line Graph",
                 options=all_metrics,
-                default=["Win Percentage", "Points For"]
+                default=["Win Pct", "Points For"]
             )
 
             if line_metrics:
