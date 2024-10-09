@@ -25,6 +25,9 @@ except FileNotFoundError:
         initial_sidebar_state="collapsed",
         page_icon=":football:"  # Use a default emoji icon
     )
+except Exception as e:
+    st.error(f"An error occurred during page configuration: {e}")
+    st.stop()
 
 # ---------------------------
 # Custom CSS for Mobile Responsiveness
@@ -75,6 +78,9 @@ try:
     ESPNS2 = st.secrets["ESPNS2"]
 except KeyError as e:
     st.error(f"Missing secret key: {e}. Please set it in your Streamlit secrets.")
+    st.stop()
+except Exception as e:
+    st.error(f"An unexpected error occurred while accessing secrets: {e}")
     st.stop()
 
 # Cookies for authentication
@@ -269,6 +275,48 @@ def calculate_win_pct_vs_median(df_cleaned):
 
     return win_vs_median_df
 
+def calculate_strength_of_schedule(df_cleaned, total_table_df):
+    """
+    Calculates the Strength of Schedule (SoS) for each team based on opponents' Win Percentage.
+
+    Parameters:
+    - df_cleaned (pd.DataFrame): Cleaned matchups data up to the current week.
+    - total_table_df (pd.DataFrame): Current total standings with Win Pct.
+
+    Returns:
+    - sos_df (pd.DataFrame): DataFrame containing SoS for each team.
+    """
+    teams = total_table_df['Team'].unique()
+    sos_dict = {}
+
+    for team in teams:
+        # Find all matchups where this team was either Home or Away
+        team_matches = df_cleaned[(df_cleaned['Home Team'] == team) | (df_cleaned['Away Team'] == team)]
+        
+        # Get opponents, excluding "Bye"
+        opponents = team_matches.apply(
+            lambda row: row['Away Team'] if row['Home Team'] == team else row['Home Team'],
+            axis=1
+        )
+        opponents = opponents[opponents != "Bye"]
+        
+        # Get opponents' Win Pct from total_table_df
+        opponents_stats = total_table_df[total_table_df['Team'].isin(opponents)]['Win Pct']
+        
+        if len(opponents_stats) > 0:
+            sos = opponents_stats.mean()
+        else:
+            sos = np.nan  # Assign NaN if no opponents have been played
+        
+        sos_dict[team] = sos
+
+    sos_df = pd.DataFrame({
+        "Team": list(sos_dict.keys()),
+        "Strength of Schedule": list(sos_dict.values())
+    })
+
+    return sos_df
+
 def generate_total_table(records_df, points_df, all_play_df, current_week, df_cleaned):
     total_df = pd.merge(records_df, points_df, on="Team")
     total_df["Net Points"] = total_df["Points For"] - total_df["Points Against"]
@@ -328,6 +376,13 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
     ]
     total_df["Luck Rating"] = np.select(conditions, choices, default="Unluckiest")
 
+    # Calculate Strength of Schedule
+    sos_df = calculate_strength_of_schedule(df_cleaned, total_df)
+    total_df = pd.merge(total_df, sos_df, on="Team", how="left")
+
+    # **New Step: Calculate Schedule Difficulty Rank**
+    total_df["Schedule Difficulty Rank"] = total_df["Strength of Schedule"].rank(ascending=False, method='dense').astype(int)
+
     columns_order = [
         "Team",
         "Wins",
@@ -345,6 +400,7 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "All-Play Win Pct",
         "Luck Differential",
         "Luck Rating",
+        "Schedule Difficulty Rank",  # Newly added metric
         "Rem. Games",
         "Max Wins",
         "Win Pct vs Median",
@@ -377,7 +433,7 @@ def generate_weekly_total_tables(df_cleaned, all_play_df):
 
 def sanitize_sheet_name(name):
     """
-    Sanitizes the sheet name to ensure it is <=30 characters and replaces 'Pct' with 'Pct'.
+    Sanitizes the sheet name to ensure it is <=30 characters and replaces invalid characters.
     """
     name = name.replace("Pct", "Pct")
     name = name.replace("/", "_").replace("\\", "_")  # Replace invalid characters
@@ -391,8 +447,12 @@ def create_download_link(df, filename, sheet_name="Sheet1"):
     """
     sanitized_sheet_name = sanitize_sheet_name(sheet_name)
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, sheet_name=sanitized_sheet_name, index=False)
+    try:
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name=sanitized_sheet_name, index=False)
+    except Exception as e:
+        st.error(f"An error occurred while creating the Excel file: {e}")
+        return
     processed_data = output.getvalue()
     return st.download_button(
         label="📥 Download Excel",
@@ -414,6 +474,8 @@ def main():
         st.image(logo, width=300)  # Adjust the width as needed
     except FileNotFoundError:
         st.warning("Logo image not found. Please ensure 'assets/logo.png' exists.")
+    except Exception as e:
+        st.error(f"An error occurred while loading the logo: {e}")
 
     st.title("🏈 Fantasy Football Dashboard")
     st.subheader("Welcome to the nerd zone where you can see just how poorly your team stacks up against all the other mediocre squads in the league.")
@@ -485,7 +547,9 @@ def main():
         "All-Play Wins", "All-Play Losses", "All-Play Win Pct",
         "Luck Differential", "Magic Number",
         "Power Score", "Standings Score", "Rem. Games", "Max Wins",
-        "Win Pct vs Median", "Luck Rating"
+        "Win Pct vs Median", "Luck Rating",
+        "Strength of Schedule",  # Retained for detailed views
+        "Schedule Difficulty Rank"  # Newly added metric
     ]
 
     # ---------------------------
@@ -547,6 +611,20 @@ def main():
         fig_np.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
         st.plotly_chart(fig_np, use_container_width=True)
 
+        # Display Strength of Schedule Rank
+        st.subheader("Schedule Difficulty Rank by Team")
+        fig_rank = px.bar(
+            total_table_df,
+            x='Team',
+            y='Schedule Difficulty Rank',
+            title='Schedule Difficulty Rank by Team (1 = Hardest)',
+            color='Schedule Difficulty Rank',
+            text='Schedule Difficulty Rank'
+        )
+        fig_rank.update_traces(texttemplate='%{text}', textposition='outside')
+        fig_rank.update_layout(yaxis=dict(autorange='reversed'), uniformtext_minsize=8, uniformtext_mode='hide')
+        st.plotly_chart(fig_rank, use_container_width=True)
+
     # ---------------------------
     # Team Analysis Page
     # ---------------------------
@@ -566,7 +644,8 @@ def main():
             st.subheader(f"Record for {selected_team}")
             st.table(team_record[[
                 'Wins', 'Losses', 'Ties', 'Win Pct',
-                'Points For', 'Points Against', 'Net Points'
+                'Points For', 'Points Against', 'Net Points',
+                'Strength of Schedule', 'Schedule Difficulty Rank'
             ]])
 
             # Display Weekly Performance
@@ -611,6 +690,14 @@ def main():
                 f"{selected_team}_{metric}_Weekly_Data.xlsx",
                 sheet_name=f"{selected_team} {metric}"
             )
+
+            # Display Strength of Schedule
+            st.subheader(f"Schedule Difficulty Rank for {selected_team}")
+            sos_rank = team_record['Schedule Difficulty Rank'].values[0]
+            if not np.isnan(sos_rank):
+                st.metric(label="Schedule Difficulty Rank", value=f"{sos_rank}")
+            else:
+                st.write("No matchups played yet to calculate Schedule Difficulty Rank.")
 
     # ---------------------------
     # Weekly Matchups Page
@@ -752,14 +839,14 @@ def main():
                     y=y_metric,
                     color="Team",
                     size="Win Pct",
-                    hover_data=["Wins", "Losses", "Ties"],
+                    hover_data=["Wins", "Losses", "Ties", "Strength of Schedule", "Schedule Difficulty Rank"],
                     title=f'{y_metric} vs {x_metric}',
                 )
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
                 # Download Scatter Plot Data
                 scatter_data = total_table_df[[
-                    'Team', x_metric, y_metric, 'Wins', 'Losses', 'Ties', 'Win Pct'
+                    'Team', x_metric, y_metric, 'Wins', 'Losses', 'Ties', 'Win Pct', 'Strength of Schedule', 'Schedule Difficulty Rank'
                 ]]
                 create_download_link(
                     scatter_data,
@@ -849,8 +936,11 @@ def main():
                         for week in sorted(weekly_total_tables.keys()):
                             weekly_df = weekly_total_tables[week]
                             if metric in weekly_df.columns:
-                                value = weekly_df[weekly_df['Team'] == team][metric].values
-                                value = value[0] if len(value) > 0 else 0
+                                try:
+                                    value = weekly_df[weekly_df['Team'] == team][metric].values
+                                    value = value[0] if len(value) > 0 else 0
+                                except KeyError:
+                                    value = 0
                             else:
                                 value = 0
                             metric_values.append(value)
