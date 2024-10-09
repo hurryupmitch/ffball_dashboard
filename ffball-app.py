@@ -400,6 +400,7 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "All-Play Win Pct",
         "Luck Differential",
         "Luck Rating",
+        "Strength of Schedule",       # Re-added metric
         "Schedule Difficulty Rank",  # Newly added metric
         "Rem. Games",
         "Max Wins",
@@ -611,7 +612,7 @@ def main():
         fig_np.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
         st.plotly_chart(fig_np, use_container_width=True)
 
-        # Display Strength of Schedule Rank
+        # Display Schedule Difficulty Rank
         st.subheader("Schedule Difficulty Rank by Team")
         fig_rank = px.bar(
             total_table_df,
@@ -691,7 +692,7 @@ def main():
                 sheet_name=f"{selected_team} {metric}"
             )
 
-            # Display Strength of Schedule
+            # Display Schedule Difficulty Rank
             st.subheader(f"Schedule Difficulty Rank for {selected_team}")
             sos_rank = team_record['Schedule Difficulty Rank'].values[0]
             if not np.isnan(sos_rank):
