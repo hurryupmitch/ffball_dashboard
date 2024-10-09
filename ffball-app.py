@@ -274,7 +274,7 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
     total_df["Net Points"] = total_df["Points For"] - total_df["Points Against"]
     total_df["Total Games"] = total_df["Wins"] + total_df["Losses"] + total_df["Ties"]
     total_df["Win Pct"] = (total_df["Wins"] + 0.5 * total_df["Ties"]) / total_df["Total Games"]
-    total_df["Points Per Game"] = total_df["Points For"] / total_df["Total Games"]
+    total_df["PPG"] = total_df["Points For"] / total_df["Total Games"]
 
     all_play_agg = all_play_df.groupby('Team').agg({
         "All-Play Wins": "sum",
@@ -286,8 +286,8 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
     total_df["Luck Differential"] = total_df["Win Pct"] - total_df["All-Play Win Pct"]
     total_df["Standings Score"] = total_df["Win Pct"] + (total_df["Points For"] / 10000)
 
-    total_df["Remaining Games"] = TOTAL_WEEKS - current_week
-    total_df["Max Wins"] = total_df["Wins"] + total_df["Remaining Games"]
+    total_df["Rem. Games"] = TOTAL_WEEKS - current_week
+    total_df["Max Wins"] = total_df["Wins"] + total_df["Rem. Games"]
 
     sorted_max_wins = total_df.sort_values(by="Max Wins", ascending=False)
     if len(sorted_max_wins) >= PLAYOFF_SPOTS:
@@ -339,13 +339,13 @@ def generate_total_table(records_df, points_df, all_play_df, current_week, df_cl
         "Points Against",
         "Net Points",
         "Win Pct",
-        "Points Per Game",
+        "PPG",
         "All-Play Wins",
         "All-Play Losses",
         "All-Play Win Pct",
         "Luck Differential",
         "Luck Rating",
-        "Remaining Games",
+        "Rem. Games",
         "Max Wins",
         "Win Pct vs Median",
         "Magic Number"
@@ -481,10 +481,10 @@ def main():
     # Define All Tracked Metrics
     all_metrics = [
         "Wins", "Losses", "Ties", "Points For", "Points Against",
-        "Net Points", "Win Pct", "Points Per Game",
+        "Net Points", "Win Pct", "PPG",
         "All-Play Wins", "All-Play Losses", "All-Play Win Pct",
         "Luck Differential", "Magic Number",
-        "Power Score", "Standings Score", "Remaining Games", "Max Wins",
+        "Power Score", "Standings Score", "Rem. Games", "Max Wins",
         "Win Pct vs Median", "Luck Rating"
     ]
 
